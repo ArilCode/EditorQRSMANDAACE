@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Editor Style Kartu QR</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:14px;font-family:system-ui,Arial,sans-serif;background:#f5f3ff;color:#201747}
+.bar{max-width:520px;margin:0 auto 16px;background:#fff;padding:16px;border-radius:16px;box-shadow:0 6px 20px #312e8118}
+h2{margin:0 0 8px;font-size:18px}
+ol{margin:0 0 12px;padding-left:18px;font-size:12px;line-height:1.7;color:#4b4670}
+label.t{display:block;font-size:12px;font-weight:700;margin:8px 0 4px}
+input,select,button,.up{width:100%;padding:12px;margin-bottom:8px;border-radius:10px;border:2px solid #e9e5f5;font-size:14px;background:#fff}
+button,.up{border:0;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-weight:700;cursor:pointer;display:block;text-align:center}
+button.dl{background:linear-gradient(135deg,#059669,#0d9488)}
+#msg{font-size:12px;min-height:16px;color:#b91c1c}
+.idm{font-family:ui-monospace,Consolas,monospace;background:#f3e8ff;padding:8px 10px;border-radius:8px;font-size:13px;margin-bottom:6px}
+.note{font-size:11px;color:#6b6685;line-height:1.5}
+#out{max-width:340px;margin:auto}
+#out canvas{width:100%;height:auto;display:block;border-radius:18px;box-shadow:0 8px 22px #312e8133}
+#dec{position:absolute;left:-9999px;top:0;width:10px;height:10px;overflow:hidden}
+</style>
+
+<link rel="stylesheet" href="./skeleton.css">
+</head>
+<body>
+<div class="bar">
+  <h2>🎨 Editor Style Kartu QR</h2>
+  <ol>
+    <li>Unduh kartu dari <b>cetak.html</b> (pakai tombol Unduh, jangan screenshot).</li>
+    <li>Upload kartunya di sini.</li>
+    <li>Pilih style baru, lalu unduh. QR tetap sama dan tetap bisa discan di absensi.</li>
+  </ol>
+  <label class="up" for="file">⬆ Upload kartu QR</label>
+  <input type="file" id="file" accept="image/*" hidden>
+  <div id="msg"></div>
+    <div id="panelSk" style="display:none">
+    <div class="sk sk-line" style="width:35%"></div>
+    <div class="sk sk-in"></div>
+    <div class="sk sk-line" style="width:55%"></div>
+    <div class="sk sk-in"></div>
+    <div class="sk sk-in"></div>
+    <div class="sk sk-in"></div>
+  </div>
+
+  <div id="panel" style="display:none">
+    <div class="idm">ID: <span id="idMask"></span></div>
+    <label class="t">Nama</label><input id="nama">
+    <label class="t">Nama panggilan (tengah QR)</label><input id="pang">
+    <label class="t">Kelas</label><input id="kelas">
+    <label class="t">Style</label><select id="style"></select>
+    <button class="dl" id="dl">⬇ Unduh Kartu Baru</button>
+    <div class="note">Nama, panggilan, dan kelas hanya mengubah tulisan di kartu. Yang dibaca absensi tetap isi QR-nya.
+    Kalau kartu dikirim lewat WhatsApp, kirim sebagai <b>Dokumen</b> supaya data nama ikut terbawa.</div>
+  </div>
+</div>
+<div id="out"></div>
+<div id="dec"></div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="./kartu.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+let kode="",cvAktif=null;
+
+// pilihan style (tanpa tema khusus)
+(function(){
+  const grup={};
+  THEMES.filter(t=>!t.lock).forEach(t=>{(grup[t.g]=grup[t.g]||[]).push(t);});
+  Object.keys(grup).forEach(g=>{
+    const og=document.createElement("optgroup");og.label=g;
+    grup[g].forEach(t=>{const o=document.createElement("option");o.value=t.id;o.textContent=t.n;og.appendChild(o);});
+    $("style").appendChild(og);
+  });
+})();
+
+function muatGambar(file){
+  return new Promise((ok,gagal)=>{
+    const img=new Image();const u=URL.createObjectURL(file);
+    img.onload=()=>{URL.revokeObjectURL(u);ok(img);};
+    img.onerror=()=>gagal(new Error("gambar rusak"));
+    img.src=u;
+  });
+}
+async function scanFile(f){
+  const h=new Html5Qrcode("dec");
+  try{const t=await h.scanFile(f,false);return t;}
+  finally{try{h.clear();}catch(_){}}
+}
+async function bacaQR(file){
+  try{return await scanFile(file);}catch(e){}
+  // cadangan: potong area QR pada kartu bawaan (600x900)
+  try{
+    const img=await muatGambar(file);
+    const k=img.width/600,sz=Math.round(520*k);
+    const c=document.createElement("canvas");c.width=c.height=sz;
+    c.getContext("2d").drawImage(img,40*k,120*k,520*k,520*k,0,0,sz,sz);
+    const blob=await new Promise(r=>c.toBlob(r,"image/png"));
+    return await scanFile(new File([blob],"crop.png",{type:"image/png"}));
+  }catch(e){return null;}
+}
+
+function gambar(){
+  if(!kode)return;
+  const s={kode,nama:$("nama").value.trim()||"-",panggilan:$("pang").value.trim(),kelas:$("kelas").value.trim()||"-"};
+  cvAktif=gambarKartu(s,$("style").value);
+  $("out").innerHTML="";$("out").appendChild(cvAktif);
+}
+
+$("file").addEventListener("change", async e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  
+  // tampilkan skeleton selagi kartu dibaca
+  $("panel").style.display = "none";
+  $("panelSk").style.display = "block";
+  $("out").innerHTML = '<div class="sk sk-card"></div>';
+  $("msg").style.color = "#6b6685";
+  $("msg").textContent = "Membaca QR...";
+  const tahan = new Promise(r => setTimeout(r, 500)); // supaya skeleton sempat terlihat
+  
+  const meta = bacaMeta(await f.arrayBuffer());
+  let k = await bacaQR(f);
+  await tahan;
+  if ((!k || !/^ACE-/i.test(k)) && meta && meta.kode) k = meta.kode;
+  
+  $("panelSk").style.display = "none";
+    if((k&&/^ACX-/i.test(k))||(meta&&/^ACX-/i.test(String(meta.kode||"")))){
+    $("out").innerHTML="";
+    $("msg").style.color="#b91c1c";
+    $("msg").textContent="🛡️ Kartu Wewenang tidak bisa diubah atau digandakan lewat editor.";
+    return;
+  }
+  if (!k || !/^ACE-/i.test(k)) {
+    $("out").innerHTML = "";
+    $("msg").style.color = "#b91c1c";
+    $("msg").textContent = "❌ QR tidak terbaca. Pakai kartu yang diunduh dari cetak.html.";
+    return;
+  }
+  
+  kode = k.trim().toUpperCase();
+  $("idMask").textContent = maskId(kode);
+  $("nama").value = meta ? meta.nama || "" : "";
+  $("pang").value = meta ? meta.panggilan || "" : "";
+  $("kelas").value = meta ? meta.kelas || "" : "";
+  const tema = meta && THEMES.find(t => t.id === meta.tema && !t.lock);
+  $("style").value = tema ? tema.id : "biasa";
+  $("panel").style.display = "block";
+  $("msg").style.color = "#166534";
+  $("msg").textContent = meta ? "✅ QR terbaca, data kartu dimuat" : "✅ QR terbaca. Isi nama, panggilan, dan kelas secara manual.";
+  gambar();
+});
+
+["nama","pang","kelas"].forEach(id=>$(id).addEventListener("input",gambar));
+$("style").addEventListener("change",gambar);
+$("dl").addEventListener("click",()=>{
+  if(!cvAktif)return;
+  unduhKartu(cvAktif,{kode,nama:$("nama").value.trim()||"-",panggilan:$("pang").value.trim(),kelas:$("kelas").value.trim()||"-"},$("style").value);
+});
+</script>
+</body>
+</html>
